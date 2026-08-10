@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "evidence_class": "operator-recorded credentialed smoke test",
+  "qualified_at_utc": "2026-08-10T03:31:16Z",
+  "provider": "ShrimpAI",
+  "base_url": "https://shrimpai.cc/v1",
+  "credential_policy": {
+    "name": "echoweave-public-demo",
+    "model_allowlist": [
+      "step-3.7-flash"
+    ],
+    "quota_usd": 5,
+    "expires_at": "2026-09-10T03:09:36Z",
+    "secret_recorded": false
+  },
+  "checks": [
+    {
+      "operation": "GET /models",
+      "http_status": 200,
+      "model": "step-3.7-flash",
+      "model_present": true
+    },
+    {
+      "operation": "POST /chat/completions",
+      "model": "step-3.7-flash",
+      "stream": true,
+      "max_tokens": 256,
+      "http_status": 200,
+      "content_type": "text/event-stream",
+      "content_received": true,
+      "finish_reason": "stop",
+      "done_received": true
+    }
+  ],
+  "not_qualified": [
+    "image generation",
+    "video generation",
+    "ASR",
+    "TTS",
+    "realtime media",
+    "VoxCPM2 worker protocol",
+    "SoulX avatar worker protocol"
+  ],
+  "notes": "This report intentionally excludes the API key, request prompt, full response, account identity and billing details. Re-run qualification after any provider, model or protocol change."
+}

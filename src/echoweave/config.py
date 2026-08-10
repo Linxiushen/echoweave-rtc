@@ -4,11 +4,12 @@ import ipaddress
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 BACKEND_CHOICES = {
     "vad": {"energy", "silero_v5"},
     "asr": {"demo", "qwen_local", "qwen_http"},
-    "llm": {"demo", "deepseek"},
+    "llm": {"demo", "deepseek", "openai_compatible"},
     "tts": {"browser", "voxcpm_local", "voxcpm_http"},
     "avatar": {"client_lipsync", "soulx_http"},
 }
@@ -96,6 +97,25 @@ def _bind_host_is_loopback(host: str) -> bool:
         return False
 
 
+def _validate_remote_https_base_url(value: str, name: str) -> None:
+    try:
+        parsed = urlsplit(value)
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError(f"{name} is invalid") from exc
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(
+            f"{name} must be an HTTPS base URL without credentials, query, or fragment"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     host: str = "127.0.0.1"
@@ -146,6 +166,11 @@ class Settings:
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-v4-flash"
     deepseek_thinking: str = "disabled"
+
+    openai_compat_api_key: str = ""
+    openai_compat_base_url: str = ""
+    openai_compat_model: str = ""
+    openai_compat_max_tokens: int = 800
 
     voxcpm_model: str = "openbmb/VoxCPM2"
     voxcpm_base_url: str = "http://127.0.0.1:8002/v1"
@@ -252,6 +277,10 @@ class Settings:
             ).rstrip("/"),
             deepseek_model=_env("DEEPSEEK_MODEL", "deepseek-v4-flash"),
             deepseek_thinking=_env("DEEPSEEK_THINKING", "disabled"),
+            openai_compat_api_key=_env("OPENAI_COMPAT_API_KEY"),
+            openai_compat_base_url=_env("OPENAI_COMPAT_BASE_URL").rstrip("/"),
+            openai_compat_model=_env("OPENAI_COMPAT_MODEL"),
+            openai_compat_max_tokens=int(_env("OPENAI_COMPAT_MAX_TOKENS", "800")),
             voxcpm_model=_env("VOXCPM_MODEL", "openbmb/VoxCPM2"),
             voxcpm_base_url=_env("VOXCPM_BASE_URL", "http://127.0.0.1:8002/v1").rstrip(
                 "/"
@@ -375,8 +404,34 @@ class Settings:
             raise ValueError(
                 "ECHOWEAVE_CONSENT_STATE_PATH is required with a consent signing key"
             )
-        if self.llm_backend == "deepseek" and not self.deepseek_api_key:
-            raise ValueError("DEEPSEEK_API_KEY is required for the DeepSeek backend")
+        if self.llm_backend == "deepseek":
+            if not self.deepseek_api_key:
+                raise ValueError(
+                    "DEEPSEEK_API_KEY is required for the DeepSeek backend"
+                )
+            _validate_remote_https_base_url(
+                self.deepseek_base_url,
+                "DEEPSEEK_BASE_URL",
+            )
+        if self.llm_backend == "openai_compatible":
+            if not self.openai_compat_api_key:
+                raise ValueError(
+                    "OPENAI_COMPAT_API_KEY is required for the OpenAI-compatible backend"
+                )
+            if not self.openai_compat_base_url:
+                raise ValueError(
+                    "OPENAI_COMPAT_BASE_URL is required for the OpenAI-compatible backend"
+                )
+            if not self.openai_compat_model:
+                raise ValueError(
+                    "OPENAI_COMPAT_MODEL is required for the OpenAI-compatible backend"
+                )
+            _validate_remote_https_base_url(
+                self.openai_compat_base_url,
+                "OPENAI_COMPAT_BASE_URL",
+            )
+            if not 1 <= self.openai_compat_max_tokens <= 16_384:
+                raise ValueError("OPENAI_COMPAT_MAX_TOKENS is out of range")
         if self.tts_backend == "voxcpm_http" and not self.effective_voxcpm_worker_token:
             raise ValueError("VOXCPM_WORKER_TOKEN is required for the VoxCPM worker")
         if (

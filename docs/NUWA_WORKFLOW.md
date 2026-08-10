@@ -99,7 +99,10 @@ preparation utility deliberately does not do this for you.
 
 Start `consent.json` from `personas/example/consent.json.example`, not from the
 draft metadata file. Fill verified record IDs, exact scopes, issue/expiry
-times, and the voice sample's exact transcript. Calculate a SHA-256 for
+times, and the voice sample's exact transcript. If a hosted LLM is enabled,
+include both `third_party_model_processing` and the exact
+`third_party_processor:<hostname>` scope; a provider change requires a new
+reviewed manifest revision. Calculate a SHA-256 for
 `SKILL.md` and every configured asset:
 
 ```powershell

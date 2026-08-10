@@ -20,7 +20,8 @@ realtime path.
 For a real person, `consent.json` must:
 
 - record separate consent for persona, voice and avatar use;
-- include `third_party_model_processing` before using the hosted DeepSeek API;
+- include `third_party_model_processing` and the exact signed
+  `third_party_processor:<hostname>` scope before using any hosted LLM;
 - include an expiry and revocation state;
 - include identity/authority verification record identifiers;
 - bind reference files by SHA-256;

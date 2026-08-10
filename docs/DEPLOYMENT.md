@@ -72,8 +72,35 @@ DEEPSEEK_THINKING=disabled
 Disabling thinking is recommended for ordinary realtime turns because it
 reduces first-token latency.
 Because this sends the reviewed persona profile and conversation to a hosted
-processor, non-demo personas must include the
-`third_party_model_processing` scope.
+processor, non-demo personas must include both `third_party_model_processing`
+and the processor binding derived from the configured hostname in the signed
+consent scope. With the default URL, that binding is
+`third_party_processor:api.deepseek.com`.
+
+### OpenAI-compatible hosted gateway
+
+Use the generic backend for a provider that documents streaming OpenAI
+chat-completions. Unlike the DeepSeek adapter, it does not send vendor-specific
+`thinking` fields:
+
+```text
+ECHOWEAVE_LLM_BACKEND=openai_compatible
+OPENAI_COMPAT_API_KEY=<server secret>
+OPENAI_COMPAT_BASE_URL=https://provider.example/v1
+OPENAI_COMPAT_MODEL=<exact provider model ID>
+OPENAI_COMPAT_MAX_TOKENS=800
+```
+
+The base URL must use HTTPS and cannot contain credentials, a query string or a
+fragment. Confirm the exact model ID through the provider before enabling the
+backend. OpenAI-compatible chat does not imply compatibility with
+`/audio/transcriptions`, `/audio/speech`, image generation, video generation or
+EchoWeave's VoxCPM2 and SoulX worker protocols. Qualify each media endpoint and
+adapter independently. Hosted processing requires both
+`third_party_model_processing` and a processor binding derived from the exact
+configured hostname. For the example above that binding is
+`third_party_processor:provider.example`. Changing the hostname invalidates the
+old authorization until a new manifest revision is reviewed and signed.
 
 ## 5. VoxCPM2 worker
 

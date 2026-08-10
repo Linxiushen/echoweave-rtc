@@ -161,6 +161,13 @@ ECHOWEAVE_TTS_BACKEND=voxcpm_http
 ECHOWEAVE_AVATAR_BACKEND=soulx_http
 ```
 
+流式文本 LLM 也可切换到经部署方资格验证的 OpenAI-compatible HTTPS 网关；该模式不会
+发送 DeepSeek 私有字段。它只代表文本对话协议兼容，不自动代表 ASR、TTS、图片、
+视频或 SoulX 协议兼容。配置和独立验收要求见[部署文档](docs/DEPLOYMENT.md)。
+
+临时公开虚构 `demo` 可使用[Cloudflare Quick Tunnel 安全运行手册](docs/CLOUDFLARE_DEMO.md)。
+GitHub Pages 不能运行 Python、WebSocket 或 GPU worker，因此只承担源码与 CI。
+
 所有秘密只通过服务端环境变量或秘密管理器注入。DeepSeek key 只从
 `DEEPSEEK_API_KEY` 读取；任何曾出现在聊天、日志、工单或 Git 历史里的 key 都
 必须先撤销并轮换，不能继续使用，也不能提交 `.env`。

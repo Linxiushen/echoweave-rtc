@@ -78,6 +78,10 @@ def test_example_environment_and_compose_keep_identity_boundaries_explicit():
         "ECHOWEAVE_TLS_KEYFILE",
         "ECHOWEAVE_MAX_ACTIVE_SESSIONS",
         "ECHOWEAVE_WORKER_ASSERTION_TTL_SECONDS",
+        "OPENAI_COMPAT_API_KEY",
+        "OPENAI_COMPAT_BASE_URL",
+        "OPENAI_COMPAT_MODEL",
+        "OPENAI_COMPAT_MAX_TOKENS",
         "VOXCPM_WORKER_TOKEN",
         "VOXCPM_WORKER_AUDIENCE",
         "VOXCPM_MAX_INFLIGHT_REQUESTS",
@@ -91,6 +95,7 @@ def test_example_environment_and_compose_keep_identity_boundaries_explicit():
     assert required <= env_values.keys()
     for name in (
         "DEEPSEEK_API_KEY",
+        "OPENAI_COMPAT_API_KEY",
         "ECHOWEAVE_ACCESS_TOKEN",
         "ECHOWEAVE_CONSENT_SIGNING_KEY",
         "ECHOWEAVE_SESSION_SIGNING_KEY",
