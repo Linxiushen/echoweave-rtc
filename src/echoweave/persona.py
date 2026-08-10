@@ -293,6 +293,7 @@ def _validate_manifest_body(
     payload: dict[str, Any],
     *,
     require_third_party_scope: bool,
+    required_third_party_processor: str | None,
 ) -> dict[str, str]:
     issued_text = _strict_string(payload, "issued_at", maximum=64)
     valid_until_text = _strict_string(payload, "valid_until", maximum=64)
@@ -334,6 +335,12 @@ def _validate_manifest_body(
         )
     if require_third_party_scope and THIRD_PARTY_PROCESSING_SCOPE not in scopes:
         raise PersonaConsentError("consent does not cover third-party model processing")
+    if required_third_party_processor is not None:
+        processor_scope = f"third_party_processor:{required_third_party_processor}"
+        if processor_scope not in scopes:
+            raise PersonaConsentError(
+                "consent does not cover the configured third-party processor"
+            )
 
     if profile_class == "verified_human":
         if payload.get("subject_verified") is not True:
@@ -407,6 +414,7 @@ class PersonaRegistry:
     signing_key: str = ""
     require_third_party_scope: bool = False
     state_path: Path | None = None
+    required_third_party_processor: str | None = None
     _consent_states: dict[str, _ConsentState] = field(
         default_factory=dict, init=False, repr=False
     )
@@ -414,6 +422,19 @@ class PersonaRegistry:
 
     def __post_init__(self) -> None:
         self.root = Path(self.root)
+        if self.required_third_party_processor is not None:
+            processor = self.required_third_party_processor
+            if (
+                not self.require_third_party_scope
+                or not processor
+                or processor != processor.strip().lower()
+                or len(processor) > 70
+                or any(
+                    char not in "abcdefghijklmnopqrstuvwxyz0123456789.-"
+                    for char in processor
+                )
+            ):
+                raise ValueError("required third-party processor is invalid")
         if self.state_path is None:
             return
         self.state_path = Path(self.state_path)
@@ -608,6 +629,7 @@ class PersonaRegistry:
         hashes = _validate_manifest_body(
             payload,
             require_third_party_scope=self.require_third_party_scope,
+            required_third_party_processor=self.required_third_party_processor,
         )
         return revision, consent_id, manifest_persona_id, hashes
 
@@ -924,6 +946,7 @@ def sign_manifest(path: Path, signing_key: str) -> str:
     hashes = _validate_manifest_body(
         payload,
         require_third_party_scope=False,
+        required_third_party_processor=None,
     )
     asset_limits = {
         str(payload["nuwa_skill"]): MAX_SKILL_BYTES,

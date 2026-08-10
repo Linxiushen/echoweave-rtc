@@ -16,8 +16,9 @@ persona needs subject- or rights-holder-approved source material. At minimum:
 - a face reference and a clean voice reference with its exact transcript;
 - verification/reviewer record IDs, issue and expiry times, revocation channel;
 - SHA-256 binding for every loaded file and a server-side signature;
-- `third_party_model_processing` scope when a hosted LLM receives the profile or
-  conversation.
+- `third_party_model_processing` plus an exact
+  `third_party_processor:<hostname>` scope when a hosted LLM receives the
+  profile or conversation.
 
 Collect only what is required for the authorized purpose. Do not scrape a
 stranger, infer consent from public availability, or treat ownership of a media
@@ -35,8 +36,10 @@ authorization is truthful.
 - The realtime endpoint accepts an allowlisted `persona_id`, not arbitrary live
   face or voice uploads.
 - Every non-demo profile requires signed scopes for conversation, persona,
-  voice cloning and avatar animation. Hosted DeepSeek use additionally requires
-  `third_party_model_processing`.
+  voice cloning and avatar animation. Any hosted LLM additionally requires both
+  `third_party_model_processing` and an exact processor-host scope such as
+  `third_party_processor:api.deepseek.com`. Changing providers therefore
+  requires a newly reviewed and signed manifest revision.
 - Real-person profiles require a verification record ID, expiry, non-withdrawn
   status and SHA-256 binding for every reference asset.
 - Each session keeps an immutable authorization snapshot. Exact Nuwa profile,
@@ -62,7 +65,7 @@ authorization is truthful.
 ## Secret handling
 
 The example environment file contains placeholders only. Real values for
-`DEEPSEEK_API_KEY`, `ECHOWEAVE_ACCESS_TOKEN`,
+`DEEPSEEK_API_KEY`, `OPENAI_COMPAT_API_KEY`, `ECHOWEAVE_ACCESS_TOKEN`,
 `ECHOWEAVE_CONSENT_SIGNING_KEY`, `ECHOWEAVE_SESSION_SIGNING_KEY`,
 `VOXCPM_WORKER_TOKEN`, `SOULX_WORKER_TOKEN` and worker API keys must be injected
 at runtime from a secret manager or protected server environment. Use separate

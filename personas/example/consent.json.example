@@ -15,7 +15,8 @@
     "persona_profile",
     "voice_clone",
     "avatar_animation",
-    "third_party_model_processing"
+    "third_party_model_processing",
+    "third_party_processor:provider.example"
   ],
   "issued_at": "2026-07-31T00:00:00Z",
   "valid_until": "2027-07-31T00:00:00Z",

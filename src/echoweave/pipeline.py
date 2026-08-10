@@ -640,12 +640,14 @@ class RealtimeSession:
         except Exception as exc:  # noqa: BLE001 - adapter boundary must degrade safely
             if self._is_current(generation_id, cancel_event):
                 try:
-                    await self._internal_error("generation_failed", exc, turn_id)
-                    await self._set_state(
-                        SessionState.LISTENING,
-                        turn_id,
-                        generation_id=generation_id,
-                        cancel_event=cancel_event,
+                    reference = self._log_exception("generation_failed", exc)
+                    await self._abort_generation(
+                        generation_id,
+                        cancel_event,
+                        "generation_failed",
+                        error_code="generation_failed",
+                        error_message=f"component failed; reference {reference}",
+                        turn_id=turn_id,
                     )
                 except SlowConsumerError:
                     await self._quarantine_slow_consumer(generation_id, cancel_event)

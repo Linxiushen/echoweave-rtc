@@ -4,6 +4,12 @@ import { readFile } from "node:fs/promises";
 const html = await readFile(new URL("../../src/echoweave/web/index.html", import.meta.url), "utf8");
 const app = await readFile(new URL("../../src/echoweave/web/app.js", import.meta.url), "utf8");
 
+const pipelineMarkup = html.match(/<div id="pipelineStages"[\s\S]*?<\/div>\s*<\/div>/)?.[0] || "";
+for (const modelName of ["Silero", "Qwen", "VoxCPM", "SoulX"]) {
+  assert.ok(!pipelineMarkup.includes(modelName), `pipeline must not claim ${modelName} before handshake`);
+}
+assert.match(app, /renderRuntimeBackends\(event\.runtime\?\.backends \|\| \{\}\)/);
+
 const htmlIds = [...html.matchAll(/\bid="([A-Za-z][\w:-]*)"/g)].map((match) => match[1]);
 assert.equal(new Set(htmlIds).size, htmlIds.length, "HTML ids must be unique");
 

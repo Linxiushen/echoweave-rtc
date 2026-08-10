@@ -149,6 +149,71 @@ async def test_partial_tts_is_cleared_before_browser_fallback():
     assert not any(event["type"] == "avatar.segment" for event in json_events)
 
 
+async def test_partial_llm_failure_aborts_generation_and_clears_playout():
+    events = []
+    packets = []
+    media_sent = asyncio.Event()
+
+    async def emit_json(event):
+        events.append(event)
+
+    async def emit_binary(packet):
+        packets.append(packet)
+
+    class PartialThenFailLLM:
+        async def stream(self, _messages, _cancel_event):
+            yield "This partial response is queued for speech before failure."
+            await media_sent.wait()
+            raise RuntimeError("stream ended without a terminal event")
+
+    class BlockingTTS:
+        browser_fallback = False
+
+        def __init__(self):
+            self.cancel_event = None
+
+        async def synthesize(self, _text, _persona, cancel_event):
+            self.cancel_event = cancel_event
+            yield AudioFrame(b"\x00\x00" * 480, 48_000)
+            media_sent.set()
+            await cancel_event.wait()
+
+    tts = BlockingTTS()
+    session = RealtimeSession(
+        "partial-llm-failure",
+        _persona(),
+        RuntimeAdapters(
+            EnergyVAD(),
+            DemoASR(),
+            PartialThenFailLLM(),
+            tts,
+            ClientLipSyncAvatar(),
+        ),
+        emit_json,
+        emit_binary,
+    )
+    await session.start()
+    await session.submit_text("trigger")
+    await session.wait_idle()
+    await asyncio.sleep(0)
+
+    clear = next(
+        event
+        for event in events
+        if event["type"] == "playout.clear"
+        and event.get("reason") == "generation_failed"
+    )
+    assert packets
+    assert any(event["type"] == "assistant.delta" for event in events)
+    assert not any(event["type"] == "assistant.final" for event in events)
+    assert any(event.get("code") == "generation_failed" for event in events)
+    assert tts.cancel_event is not None
+    assert tts.cancel_event.is_set()
+    assert session.generation_id > clear["generation_id"]
+    assert session.state is SessionState.LISTENING
+    assert session.pending_task_count == 0
+
+
 async def test_authorization_failure_never_falls_back_to_browser_tts():
     events = []
     binary = []

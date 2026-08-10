@@ -151,6 +151,84 @@ def test_transport_environment_boolean_is_strict(monkeypatch):
     assert Settings.from_env().allow_insecure_private_transport is True
 
 
+def test_openai_compatible_environment_is_explicit_and_https(monkeypatch):
+    monkeypatch.setenv("ECHOWEAVE_LLM_BACKEND", "openai_compatible")
+    monkeypatch.setenv("OPENAI_COMPAT_API_KEY", "server-secret")
+    monkeypatch.setenv("OPENAI_COMPAT_BASE_URL", "https://shrimpai.cc/v1/")
+    monkeypatch.setenv("OPENAI_COMPAT_MODEL", "step-3.7-flash")
+    monkeypatch.setenv("OPENAI_COMPAT_MAX_TOKENS", "512")
+
+    settings = Settings.from_env()
+    settings.validate()
+
+    assert settings.openai_compat_base_url == "https://shrimpai.cc/v1"
+    assert settings.openai_compat_model == "step-3.7-flash"
+    assert settings.openai_compat_max_tokens == 512
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://shrimpai.cc/v1",
+        "https://user:pass@shrimpai.cc/v1",
+        "https://shrimpai.cc/v1?key=secret",
+        "https://shrimpai.cc/v1#fragment",
+        "not-a-url",
+    ],
+)
+def test_openai_compatible_backend_rejects_unsafe_base_urls(base_url):
+    settings = Settings(
+        llm_backend="openai_compatible",
+        openai_compat_api_key="server-secret",
+        openai_compat_base_url=base_url,
+        openai_compat_model="fast-model",
+    )
+
+    with pytest.raises(ValueError, match="OPENAI_COMPAT_BASE_URL"):
+        settings.validate()
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://api.deepseek.com",
+        "https://user:pass@api.deepseek.com",
+        "https://api.deepseek.com?key=secret",
+        "https://api.deepseek.com#fragment",
+        "not-a-url",
+    ],
+)
+def test_deepseek_backend_rejects_unsafe_base_urls(base_url):
+    settings = Settings(
+        llm_backend="deepseek",
+        deepseek_api_key="server-secret",
+        deepseek_base_url=base_url,
+    )
+
+    with pytest.raises(ValueError, match="DEEPSEEK_BASE_URL"):
+        settings.validate()
+
+
+@pytest.mark.parametrize(
+    ("field", "message"),
+    [
+        ("openai_compat_api_key", "OPENAI_COMPAT_API_KEY"),
+        ("openai_compat_base_url", "OPENAI_COMPAT_BASE_URL"),
+        ("openai_compat_model", "OPENAI_COMPAT_MODEL"),
+    ],
+)
+def test_openai_compatible_backend_requires_all_provider_settings(field, message):
+    values = {
+        "openai_compat_api_key": "server-secret",
+        "openai_compat_base_url": "https://gateway.test/v1",
+        "openai_compat_model": "fast-model",
+    }
+    values[field] = ""
+
+    with pytest.raises(ValueError, match=message):
+        Settings(llm_backend="openai_compatible", **values).validate()
+
+
 @pytest.mark.parametrize(
     "value",
     ["*", "proxy.internal", "0.0.0.0", "0.0.0.0/0", "10.1.2.3/8"],

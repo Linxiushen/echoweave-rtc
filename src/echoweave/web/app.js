@@ -125,6 +125,31 @@ const CLIENT_CAPABILITIES = [
   "output.video_fragments",
 ];
 const STAGE_ORDER = ["vad", "asr", "llm", "tts", "avatar"];
+const STAGE_BACKEND_LABELS = {
+  vad: {
+    energy: "Energy VAD",
+    silero_v5: "Silero v5",
+  },
+  asr: {
+    demo: "Demo ASR",
+    qwen_local: "Qwen3 local",
+    qwen_http: "Qwen3 worker",
+  },
+  llm: {
+    demo: "Demo LLM",
+    deepseek: "DeepSeek",
+    openai_compatible: "Hosted API",
+  },
+  tts: {
+    browser: "Browser TTS",
+    voxcpm_local: "VoxCPM2 local",
+    voxcpm_http: "VoxCPM2 worker",
+  },
+  avatar: {
+    client_lipsync: "Client lipsync",
+    soulx_http: "SoulX worker",
+  },
+};
 const CAPABILITY_LABELS = {
   "control.barge_in": "语音打断",
   "control.cancel": "可打断",
@@ -274,6 +299,18 @@ function renderCapabilities(capabilities = []) {
     empty.className = "capability-chip muted";
     empty.textContent = "等待协商";
     capabilityList.appendChild(empty);
+  }
+}
+
+function renderRuntimeBackends(backends = {}) {
+  if (!pipelineStages) return;
+  for (const node of pipelineStages.querySelectorAll("[data-stage]")) {
+    const stage = node.dataset.stage;
+    const backend = typeof backends[stage] === "string" ? backends[stage] : "";
+    const label = STAGE_BACKEND_LABELS[stage]?.[backend] || "未报告";
+    setText(node.querySelector("small"), label);
+    if (backend) node.title = `${stage.toUpperCase()}: ${backend}`;
+    else node.removeAttribute("title");
   }
 }
 
@@ -868,6 +905,7 @@ function handleEvent(event) {
     case "session.hello":
       EW.helloReceived = true;
       EW.fatalError = false;
+      renderRuntimeBackends(event.runtime?.backends || {});
       addActivity("网关握手完成，正在协商实时能力", "success");
       sendStartControl();
       break;

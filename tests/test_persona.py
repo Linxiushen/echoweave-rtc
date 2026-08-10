@@ -83,6 +83,30 @@ def _write_raw_signed_manifest(persona_dir, payload):
     return path
 
 
+def test_hosted_processor_requires_an_exact_signed_scope(tmp_path):
+    persona_dir, payload = _persona_fixture(tmp_path)
+    payload["consent_scope"].append("third_party_model_processing")
+    payload["consent_scope"].append("third_party_processor:shrimpai.cc")
+    _write_manifest(persona_dir, payload)
+
+    matching = PersonaRegistry(
+        tmp_path,
+        SIGNING_KEY,
+        require_third_party_scope=True,
+        required_third_party_processor="shrimpai.cc",
+    )
+    assert matching.load("fictional").persona_id == "fictional"
+
+    mismatched = PersonaRegistry(
+        tmp_path,
+        SIGNING_KEY,
+        require_third_party_scope=True,
+        required_third_party_processor="api.deepseek.com",
+    )
+    with pytest.raises(PersonaConsentError, match="configured third-party processor"):
+        mismatched.load("fictional")
+
+
 def _add_reference_assets(persona_dir, payload):
     image_path = persona_dir / "assets" / "face.png"
     voice_path = persona_dir / "assets" / "voice.wav"

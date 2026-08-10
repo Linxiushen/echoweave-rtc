@@ -37,6 +37,13 @@ class TestClient(_BaseTestClient):
 def _start_demo(socket) -> None:
     hello = socket.receive_json()
     assert hello["type"] == "session.hello"
+    assert hello["runtime"]["backends"] == {
+        "vad": "energy",
+        "asr": "demo",
+        "llm": "demo",
+        "tts": "browser",
+        "avatar": "client_lipsync",
+    }
     socket.send_json(
         {
             "type": "start",
@@ -123,6 +130,33 @@ def test_health_does_not_expose_secrets(tmp_path):
     assert set(payload) == {"ok", "service", "version"}
     assert "must-not-leak" not in response.text
     assert "also-private-but-at-least-32-bytes" not in response.text
+
+
+def test_hello_reports_backend_ids_without_provider_details(tmp_path):
+    settings = Settings(
+        persona_root=tmp_path,
+        access_token=TEST_ACCESS_TOKEN,
+        llm_backend="openai_compatible",
+        openai_compat_api_key="provider-secret-must-not-leak",
+        openai_compat_base_url="https://shrimpai.cc/v1",
+        openai_compat_model="step-3.7-flash",
+    )
+    app = create_app(settings)
+
+    with TestClient(app).websocket_connect("/ws") as socket:
+        hello = socket.receive_json()
+
+    assert hello["runtime"]["backends"] == {
+        "vad": "energy",
+        "asr": "demo",
+        "llm": "openai_compatible",
+        "tts": "browser",
+        "avatar": "client_lipsync",
+    }
+    serialized = json.dumps(hello)
+    assert "provider-secret-must-not-leak" not in serialized
+    assert "shrimpai.cc" not in serialized
+    assert "step-3.7-flash" not in serialized
 
 
 def test_docs_are_self_hosted_and_csp_compatible(tmp_path):

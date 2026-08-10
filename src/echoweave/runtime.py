@@ -12,7 +12,7 @@ from typing import Any
 
 from echoweave.adapters.asr import DemoASR, Qwen3ASRHTTP, Qwen3ASRLocal
 from echoweave.adapters.avatar import ClientLipSyncAvatar, SoulXHTTPAvatar
-from echoweave.adapters.llm import DeepSeekV4Flash, DemoLLM
+from echoweave.adapters.llm import DeepSeekV4Flash, DemoLLM, OpenAICompatibleLLM
 from echoweave.adapters.tts import BrowserTTS, VoxCPM2HTTP, VoxCPM2Local
 from echoweave.adapters.vad import EnergyVAD, SileroV5VAD
 from echoweave.auth import issue_consent_assertion
@@ -208,6 +208,18 @@ def runtime_capabilities(settings: Settings) -> tuple[str, ...]:
     else:
         capabilities.extend(("output.audio_pcm16", "output.video_fragments"))
     return tuple(dict.fromkeys(capabilities))
+
+
+def runtime_backends(settings: Settings) -> dict[str, str]:
+    """Return public backend identifiers without endpoints, models, or secrets."""
+
+    return {
+        "vad": settings.vad_backend,
+        "asr": settings.asr_backend,
+        "llm": settings.llm_backend,
+        "tts": settings.tts_backend,
+        "avatar": settings.avatar_backend,
+    }
 
 
 class RuntimeFactory:
@@ -583,6 +595,13 @@ def build_runtime(settings: Settings) -> RuntimeAdapters:
             settings.deepseek_base_url,
             settings.deepseek_model,
             settings.deepseek_thinking,
+        )
+    elif settings.llm_backend == "openai_compatible":
+        llm = OpenAICompatibleLLM(
+            settings.openai_compat_api_key,
+            settings.openai_compat_base_url,
+            settings.openai_compat_model,
+            max_tokens=settings.openai_compat_max_tokens,
         )
     else:
         llm = DemoLLM()

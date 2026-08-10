@@ -8,7 +8,7 @@ import pytest
 from echoweave.adapters.asr import Qwen3ASRHTTP
 from echoweave.adapters.avatar import SoulXHTTPAvatar
 from echoweave.adapters.http import ManagedAsyncClient
-from echoweave.adapters.llm import DeepSeekV4Flash
+from echoweave.adapters.llm import DeepSeekV4Flash, OpenAICompatibleLLM
 from echoweave.adapters.tts import VoxCPM2HTTP
 from echoweave.contracts import PersonaProfile
 
@@ -204,12 +204,288 @@ async def test_deepseek_streams_sse_split_across_arbitrary_raw_chunks():
     assert stream.closed
 
 
+async def test_openai_compatible_stream_uses_standard_body_without_vendor_fields():
+    captured: dict[str, object] = {}
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["authorization"] = request.headers.get("authorization")
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=ChunkStream(
+                [
+                    b'data: {"choices":[{"delta":{"content":"OK"}}]}\n\n',
+                    b"data: [DONE]\n\n",
+                ]
+            ),
+            request=request,
+        )
+
+    adapter = OpenAICompatibleLLM(
+        "test-key",
+        "https://gateway.test/v1/",
+        "fast-model",
+        max_tokens=321,
+    )
+    adapter._http = ManagedAsyncClient(
+        5.0,
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        chunks = [
+            chunk
+            async for chunk in adapter.stream(
+                [{"role": "user", "content": "hello"}],
+                asyncio.Event(),
+            )
+        ]
+    finally:
+        await adapter.aclose()
+
+    assert chunks == ["OK"]
+    assert captured == {
+        "url": "https://gateway.test/v1/chat/completions",
+        "authorization": "Bearer test-key",
+        "body": {
+            "model": "fast-model",
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": True,
+            "max_tokens": 321,
+        },
+    }
+
+
+async def test_openai_compatible_aggregates_multiline_sse_data_events():
+    stream = ChunkStream(
+        [
+            b"event: message\n",
+            b'data: {"choices":[{"delta":\n',
+            b'data: {"content":"hello"},"finish_reason":"stop"}]}\n\n',
+        ]
+    )
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=stream,
+            request=request,
+        )
+
+    adapter = OpenAICompatibleLLM(
+        "test-key",
+        "https://gateway.test/v1",
+        "fast-model",
+    )
+    adapter._http = ManagedAsyncClient(
+        5.0,
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        chunks = [
+            chunk
+            async for chunk in adapter.stream(
+                [{"role": "user", "content": "hello"}],
+                asyncio.Event(),
+            )
+        ]
+    finally:
+        await adapter.aclose()
+
+    assert chunks == ["hello"]
+    assert stream.closed
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b'event: error\ndata: {"message":"private provider detail"}\n\n',
+        b'data: {"error":{"message":"private provider detail"}}\n\n',
+    ],
+)
+async def test_openai_compatible_rejects_sse_error_events_without_leaking_details(
+    body: bytes,
+):
+    stream = ChunkStream([body])
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=stream,
+            request=request,
+        )
+
+    adapter = OpenAICompatibleLLM(
+        "test-key",
+        "https://gateway.test/v1",
+        "fast-model",
+    )
+    adapter._http = ManagedAsyncClient(
+        5.0,
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        with pytest.raises(RuntimeError, match="streamed error") as caught:
+            _ = [
+                chunk
+                async for chunk in adapter.stream(
+                    [{"role": "user", "content": "hello"}],
+                    asyncio.Event(),
+                )
+            ]
+    finally:
+        await adapter.aclose()
+
+    assert "private provider detail" not in str(caught.value)
+    assert stream.closed
+
+
+async def test_openai_compatible_rejects_eof_without_a_terminal_event():
+    stream = ChunkStream([b'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'])
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=stream,
+            request=request,
+        )
+
+    adapter = OpenAICompatibleLLM(
+        "test-key",
+        "https://gateway.test/v1",
+        "fast-model",
+    )
+    adapter._http = ManagedAsyncClient(
+        5.0,
+        transport=httpx.MockTransport(respond),
+    )
+    iterator = adapter.stream([], asyncio.Event())
+    try:
+        assert await anext(iterator) == "partial"
+        with pytest.raises(RuntimeError, match="before a terminal event"):
+            await anext(iterator)
+    finally:
+        await iterator.aclose()
+        await adapter.aclose()
+
+    assert stream.closed
+
+
+async def test_openai_compatible_rejects_error_after_partial_content():
+    stream = ChunkStream(
+        [
+            b'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n',
+            b'data: {"error":{"message":"upstream failed"}}\n\n',
+        ]
+    )
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=stream,
+            request=request,
+        )
+
+    adapter = OpenAICompatibleLLM(
+        "test-key",
+        "https://gateway.test/v1",
+        "fast-model",
+    )
+    adapter._http = ManagedAsyncClient(
+        5.0,
+        transport=httpx.MockTransport(respond),
+    )
+    iterator = adapter.stream([], asyncio.Event())
+    try:
+        assert await anext(iterator) == "partial"
+        with pytest.raises(RuntimeError, match="streamed error"):
+            await anext(iterator)
+    finally:
+        await iterator.aclose()
+        await adapter.aclose()
+
+    assert stream.closed
+
+
+async def test_openai_compatible_rejects_incomplete_finish_reasons():
+    stream = ChunkStream(
+        [
+            (
+                b'data: {"choices":[{"delta":{"content":"cut"},'
+                b'"finish_reason":"length"}]}\n\ndata: [DONE]\n\n'
+            )
+        ]
+    )
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=stream,
+            request=request,
+        )
+
+    adapter = OpenAICompatibleLLM(
+        "test-key",
+        "https://gateway.test/v1",
+        "fast-model",
+    )
+    adapter._http = ManagedAsyncClient(
+        5.0,
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        with pytest.raises(RuntimeError, match="incomplete or unsupported"):
+            _ = [chunk async for chunk in adapter.stream([], asyncio.Event())]
+    finally:
+        await adapter.aclose()
+
+    assert stream.closed
+
+
+async def test_deepseek_retains_explicit_thinking_control():
+    captured_body: dict[str, object] = {}
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        captured_body.update(json.loads(request.content))
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=ChunkStream([b"data: [DONE]\n\n"]),
+            request=request,
+        )
+
+    adapter = DeepSeekV4Flash("test-key", thinking="disabled")
+    adapter._http = ManagedAsyncClient(
+        5.0,
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        assert [
+            chunk
+            async for chunk in adapter.stream(
+                [{"role": "user", "content": "hello"}],
+                asyncio.Event(),
+            )
+        ] == []
+    finally:
+        await adapter.aclose()
+
+    assert captured_body["thinking"] == {"type": "disabled"}
+
+
 @pytest.mark.parametrize(
     ("chunks", "line_limit", "total_limit", "error"),
     [
         ([b"x" * 9, b"x" * 9], 16, 128, "oversized line"),
         ([b"x" * 128], 16, 256, "oversized line"),
         ([b": comment\n" * 8], 16, 32, "response size limit"),
+        ([b"data: 123456789\n" * 3 + b"\n"], 16, 128, "oversized SSE event"),
     ],
 )
 async def test_deepseek_rejects_unbounded_raw_streams(
@@ -296,7 +572,10 @@ async def test_deepseek_cancellation_closes_the_stream():
         ]
     )
     reused_stream = ChunkStream(
-        [b'data: {"choices":[{"delta":{"content":"again"}}]}\n\n']
+        [
+            b'data: {"choices":[{"delta":{"content":"again"}}]}\n\n',
+            b"data: [DONE]\n\n",
+        ]
     )
     streams = [cancelled_stream, reused_stream]
 

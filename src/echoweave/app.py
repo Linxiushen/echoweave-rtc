@@ -35,7 +35,12 @@ from echoweave.observability import HealthStatus, Observability
 from echoweave.persona import PersonaConsentError, PersonaRegistry
 from echoweave.pipeline import RealtimeSession
 from echoweave.protocol import PacketKind, unpack_packet
-from echoweave.runtime import RuntimeFactory, RuntimeUnavailable, runtime_capabilities
+from echoweave.runtime import (
+    RuntimeFactory,
+    RuntimeUnavailable,
+    runtime_backends,
+    runtime_capabilities,
+)
 
 LOGGER = logging.getLogger("echoweave")
 WEB_ROOT = Path(__file__).with_name("web")
@@ -613,14 +618,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.runtime_factory = runtime_factory
     app.state.observability = observability
+    hosted_llm_base_url = (
+        settings.deepseek_base_url
+        if settings.llm_backend == "deepseek"
+        else settings.openai_compat_base_url
+        if settings.llm_backend == "openai_compatible"
+        else ""
+    )
+    hosted_llm_processor = (
+        urlsplit(hosted_llm_base_url).hostname if hosted_llm_base_url else None
+    )
     registry = PersonaRegistry(
         root=settings.persona_root,
         signing_key=settings.consent_signing_key,
         require_third_party_scope=(
-            settings.llm_backend == "deepseek"
+            settings.llm_backend in {"deepseek", "openai_compatible"}
             or settings.tts_backend == "voxcpm_http"
             or settings.avatar_backend == "soulx_http"
         ),
+        required_third_party_processor=hosted_llm_processor,
         state_path=(
             settings.consent_state_path if settings.consent_signing_key else None
         ),
@@ -634,6 +650,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     observability.metrics.set_gauge("gateway.sessions.active", active_sessions)
     observability.metrics.set_gauge("gateway.sessions.pending", pending_sessions)
     server_capabilities = runtime_capabilities(settings)
+    public_runtime_backends = runtime_backends(settings)
 
     def record_rejection(reason: str) -> None:
         observability.metrics.increment(
@@ -1029,6 +1046,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         },
                     },
                     "capabilities": list(server_capabilities),
+                    "runtime": {"backends": public_runtime_backends},
                     "limits": {
                         "max_control_bytes": settings.max_ws_message_bytes,
                         "max_text_chars": settings.max_text_chars,
